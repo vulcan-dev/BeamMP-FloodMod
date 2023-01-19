@@ -1,0 +1,2 @@
+load("floodBeamMP")
+registerCoreModule("floodBeamMP")

@@ -1,0 +1,7 @@
+.sentry-native
+*.log
+*.exe
+*.toml
+
+# Can't delete it right now so just ignore it..
+/Server/
