@@ -10,8 +10,8 @@ function chatMessageHandler(pid, name, message)
         pid = -2
     end
 
-    if message:sub(1, 7) == prefix then
-        local command = message:sub(8)
+    if message:sub(1, #prefix) == "/flood_" then
+        local command = message:sub(#prefix + 1)
         local args = {}
         for arg in command:gmatch("%S+") do
             table.insert(args, arg)

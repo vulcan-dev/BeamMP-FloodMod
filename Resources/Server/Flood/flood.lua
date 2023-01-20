@@ -8,7 +8,11 @@ M.options = {
     limit = 0.0,
     limitEnabled = false,
     enabled = false,
-    decrease = false
+    decrease = false,
+    resetAt = 0.0, -- Doesn't reset everything, just the ocean level. Will be used for automatic flooding
+    rainAmount = 0.0,
+    rainVolume = -1.0, -- -1.0 = automatic, 0.0 = off, 1.0 = max
+    floodWithRain = true
 }
 
 M.isOceanValid = false
@@ -21,6 +25,15 @@ function onPlayerJoin(pid)
     local success = MP.TriggerClientEvent(pid, "E_OnPlayerLoaded", "")
     if not success then
         print("Failed to send \"E_OnPlayerLoaded\" to " .. pid)
+    end
+
+    -- Sync rain & volume
+    if M.options.rainAmount > 0.0 then
+        MP.TriggerClientEvent(pid, "E_SetRainAmount", tostring(M.options.rainAmount))
+    end
+
+    if M.options.rainVolume == -1.0 or M.options.rainVolume > 0.0 then
+        MP.TriggerClientEvent(pid, "E_SetRainVolume", tostring(M.options.rainVolume))
     end
 end
 
@@ -45,31 +58,41 @@ function T_Update()
     if not M.isOceanValid or not M.options.enabled then return end
 
     local level = M.options.oceanLevel
-    local speed = M.options.floodSpeed
+    local changeAmount = M.options.floodSpeed
     local limit = M.options.limit
     local limitEnabled = M.options.limitEnabled
     local decrease = M.options.decrease
 
+    -- If we have rain, add the rain amount to the change amount. The flood speed will now act as a multiplier.
+    if M.floodWithRain then
+        local rainAmount = M.options.rainAmount
+        if rainAmount > 0.0 then
+            changeAmount = changeAmount + rainAmount * 0.0001
+        end
+    end
+
     -- Check if we can change the level
     local canChange = true
     if limitEnabled then
-        if decrease then
-            if level - speed < limit then
-                canChange = false
-            end
-        else
-            if level + speed > limit then
-                canChange = false
-            end
+        if decrease and level - changeAmount < limit then
+            canChange = false
+        elseif not decrease and level + changeAmount > limit then
+            canChange = false
         end
     end
 
     if canChange then
         if decrease then
-            level = level - speed
+            level = level - changeAmount
         else
-            level = level + speed
+            level = level + changeAmount
         end
+    end
+
+    if M.options.resetAt > 0.0 and level >= M.options.resetAt then
+        level = M.initialLevel
+    elseif M.options.resetAt < 0.0 and level <= M.options.resetAt then
+        level = M.initialLevel
     end
 
     M.options.oceanLevel = level
@@ -113,7 +136,7 @@ M.commands["start"] = function(pid)
         M.options.oceanLevel = M.initialLevel
     end
     
-    MP.CreateEventTimer("ET_Update", 100)
+    MP.CreateEventTimer("ET_Update", 25)
 
     MP.hSendChatMessage(-1, "A flood has started!")
 end
@@ -141,7 +164,7 @@ M.commands["reset"] = function(pid)
     setWaterLevel(M.initialLevel)
 end
 
-M.commands["setLevel"] = function(pid, level)
+M.commands["level"] = function(pid, level)
     level = tonumber(level) or nil
     if not level then
         MP.hSendChatMessage(pid, "Invalid level")
@@ -158,18 +181,25 @@ M.commands["setLevel"] = function(pid, level)
     MP.hSendChatMessage(pid, "Set water level to " .. level)
 end
 
-M.commands["setSpeed"] = function(pid, speed)
+M.commands["speed"] = function(pid, speed)
     speed = tonumber(speed) or nil
     if not speed then
         MP.hSendChatMessage(pid, "Invalid speed")
         return
     end
 
+    if speed < 0.0 then
+        MP.hSendChatMessage(pid, "Speed can't be negative, setting to 0.0")
+        speed = 0.0
+    end
+
+    -- Do I limit the max? Hmmm, not sure 🤔
+
     M.options.floodSpeed = speed
     MP.hSendChatMessage(pid, "Set flood speed to " .. speed)
 end
 
-M.commands["setLimit"] = function(pid, limit)
+M.commands["limit"] = function(pid, limit)
     limit = tonumber(limit) or nil
     if not limit then
         MP.hSendChatMessage(pid, "Invalid limit")
@@ -180,7 +210,7 @@ M.commands["setLimit"] = function(pid, limit)
     MP.hSendChatMessage(pid, "Set flood limit to " .. limit)
 end
 
-M.commands["setLimitEnabled"] = function(pid, enabled)
+M.commands["limitEnabled"] = function(pid, enabled)
     print("flood_setLimitEnabled: " .. enabled)
     if string.lower(enabled) == "true" or enabled == "1" then
         enabled = true
@@ -195,16 +225,45 @@ M.commands["setLimitEnabled"] = function(pid, enabled)
     MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " flood limit")
 end
 
-M.commands["printSettings"] = function(pid)
-    MP.hSendChatMessage(pid, "Level: " .. M.options.oceanLevel)
-    MP.hSendChatMessage(pid, "Speed: " .. M.options.floodSpeed)
-    MP.hSendChatMessage(pid, "Limit: " .. M.options.limit)
-    MP.hSendChatMessage(pid, "Limit enabled: " .. tostring(M.options.limitEnabled))
-    MP.hSendChatMessage(pid, "Decrease: " .. tostring(M.options.decrease))
-    MP.hSendChatMessage(pid, "Flooding: " .. tostring(M.options.enabled))
+M.commands["resetAt"] = function(pid, level)
+    level = tonumber(level) or nil
+    if not level then
+        MP.hSendChatMessage(pid, "Invalid level")
+        return
+    end
+
+    M.options.resetAt = level
+    MP.hSendChatMessage(pid, "Set reset level to " .. level)
 end
 
-M.commands["setDecrease"] = function(pid, enabled)
+M.commands["rainAmount"] = function(pid, amount)
+    amount = tonumber(amount) or nil
+    if not amount then
+        MP.hSendChatMessage(pid, "Invalid amount")
+        return
+    end
+
+    M.options.rainAmount = amount
+    MP.hSendChatMessage(pid, "Set rain amount to " .. amount)
+    MP.TriggerClientEvent(-1, "E_SetRainAmount", tostring(amount))
+    if M.options.rainVolume == -1 then -- Update the volume if it's set to auto
+        MP.TriggerClientEvent(-1, "E_SetRainVolume", tostring(M.options.rainVolume))
+    end
+end
+
+M.commands["rainVolume"] = function(pid, volume)
+    volume = tonumber(volume) or nil
+    if not volume then
+        MP.hSendChatMessage(pid, "Invalid volume")
+        return
+    end
+
+    M.options.rainVolume = volume
+    MP.hSendChatMessage(pid, "Set rain volume to " .. volume)
+    MP.TriggerClientEvent(-1, "E_SetRainVolume", tostring(volume))
+end
+
+M.commands["floodWithRain"] = function(pid, enabled)
     if string.lower(enabled) == "true" or enabled == "1" then
         enabled = true
     elseif string.lower(enabled) == "false" or enabled == "0" then
@@ -214,14 +273,43 @@ M.commands["setDecrease"] = function(pid, enabled)
         return
     end
 
+    M.options.floodWithRain = enabled
+    MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " flooding with rain")
+end
+
+M.commands["decrease"] = function(pid, enabled)
+    if string.lower(enabled) == "true" or enabled == "1" then
+        enabled = true
+    elseif string.lower(enabled) == "false" or enabled == "0" then
+        enabled = false
+    else
+        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
+        return
+    end
+
+    if M.options.floodWithRain and M.options.rainAmount > 0.0 and enabled then
+        MP.hSendChatMessage(pid, "What? You can't flood with rain and decrease at the same time!. Well, you can but I won't let you")
+        return
+    end
+
     M.options.decrease = enabled
     MP.hSendChatMessage(pid, "Set flood decrease to " .. tostring(enabled))
+end
+
+M.commands["printSettings"] = function(pid)
+    MP.hSendChatMessage(pid, "Level: " .. M.options.oceanLevel)
+    MP.hSendChatMessage(pid, "Speed: " .. M.options.floodSpeed)
+    MP.hSendChatMessage(pid, "Limit: " .. M.options.limit)
+    MP.hSendChatMessage(pid, "Limit enabled: " .. tostring(M.options.limitEnabled))
+    MP.hSendChatMessage(pid, "Decrease: " .. tostring(M.options.decrease))
+    MP.hSendChatMessage(pid, "Reset at: " .. M.options.resetAt)
+    MP.hSendChatMessage(pid, "Flooding: " .. tostring(M.options.enabled))
 end
 
 MP.RegisterEvent("onInit", "onInit")
 MP.RegisterEvent("onPlayerJoin", "onPlayerJoin")
 MP.RegisterEvent("E_OnInitiliaze", "E_OnInitialize")
 MP.RegisterEvent("ET_Update", "T_Update")
-MP.CreateEventTimer("ET_Update", 100)
+MP.CreateEventTimer("ET_Update", 25)
 
 return M

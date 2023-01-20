@@ -103,12 +103,64 @@ AddEventHandler("E_SetWaterLevel", function(level)
     handleWaterSources() -- Hides/Shows water sources depending on the ocean level
 end)
 
-AddEventHandler("E_SendLua", function(luaStr)
-    local f, err = loadstring(luaStr)
-    if not f then
-        log("E", "E_SendLua", "Error loading lua string: " .. err)
+AddEventHandler("E_SetRainVolume", function(volume)
+    local volume = tonumber(volume) or 0
+    if not volume then
+        log("W", "E_SetRainVolume", "Invalid data: " .. tostring(data))
         return
     end
+
+    local rainObj = findObject("rain_coverage", "Precipitation")
+    if not rainObj then
+        log("W", "E_SetRainVolume", "rain_coverage not found")
+        return
+    end
+
+    local soundObj = findObject("rain_sound")
+    if soundObj then
+        soundObj:delete()
+    end
+
+    if volume == -1 then -- Automatic
+        volume = rainObj.numDrops / 100
+    end
+
+    soundObj = createObject("SFXEmitter")
+    soundObj.scale = Point3F(100, 100, 100)
+    soundObj.fileName = String('/art/sound/environment/amb_rain_medium.ogg')
+    soundObj.playOnAdd = true
+    soundObj.isLooping = true
+    soundObj.volume = volume
+    soundObj.isStreaming = true
+    soundObj.is3D = false
+    soundObj:registerObject('rain_sound')
+end)
+
+AddEventHandler("E_SetRainAmount", function(amount)
+    amount = tonumber(amount) or 0
+    local rainObj = findObject("rain_coverage", "Precipitation")
+    if not rainObj then -- Create the rain object
+        rainObj = createObject("Precipitation")
+        rainObj.dataBlock = scenetree.findObject("rain_medium")
+        rainObj.splashSize = 0
+        rainObj.splashMS = 0
+        rainObj.animateSplashes = 0
+        rainObj.boxWidth = 16.0
+        rainObj.boxHeight = 10.0
+        rainObj.dropSize = 1.0
+        rainObj.doCollision = true
+        rainObj.hitVehicles = true
+        rainObj.rotateWithCamVel = true
+        rainObj.followCam = true
+        rainObj.useWind = true
+        rainObj.minSpeed = 0.4
+        rainObj.maxSpeed = 0.5
+        rainObj.minMass = 4
+        rainObj.masMass = 5
+        rainObj:registerObject('rain_coverage')
+    end
+
+    rainObj.numDrops = amount
 end)
 
 M.hideCoveredWater = hideCoveredWater
