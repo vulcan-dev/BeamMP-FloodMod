@@ -27,15 +27,6 @@ local function tableToMatrix(tbl)
     return mat
 end
 
-local function getOcean()
-    local waterPlane = findObject("Ocean", "WaterPlane")
-    if waterPlane then
-        initialWaterPosition = waterPlane.position
-    end
-
-    return waterPlane
-end
-
 local hiddenWater = {}
 
 local function getWaterLevel()
@@ -90,7 +81,7 @@ end
 
 AddEventHandler("E_OnPlayerLoaded", function()
     allWater = getAllWater()
-    ocean = getOcean()
+    ocean = findObject("Ocean", "WaterPlane")
 
     if calledOnInit then return end
     TriggerServerEvent("E_OnInitiliaze", tostring(getWaterLevel()))

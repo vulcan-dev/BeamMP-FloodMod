@@ -113,7 +113,7 @@ M.commands["start"] = function(pid)
         M.options.oceanLevel = M.initialLevel
     end
     
-    MP.CreateEventTimer("ET_Update", 25, MP.CallStrategy.Precise)
+    MP.CreateEventTimer("ET_Update", 100)
 
     MP.hSendChatMessage(-1, "A flood has started!")
 end
@@ -224,6 +224,6 @@ MP.RegisterEvent("onInit", "onInit")
 MP.RegisterEvent("onPlayerJoin", "onPlayerJoin")
 MP.RegisterEvent("E_OnInitiliaze", "E_OnInitialize")
 MP.RegisterEvent("ET_Update", "T_Update")
-MP.CreateEventTimer("ET_Update", 25, MP.CallStrategy.Precise)
+MP.CreateEventTimer("ET_Update", 100)
 
 return M
