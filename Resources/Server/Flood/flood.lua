@@ -196,14 +196,12 @@ M.commands["setLimitEnabled"] = function(pid, enabled)
 end
 
 M.commands["printSettings"] = function(pid)
-    local message = "Flood settings:\n"
-    message = message .. "Level: " .. M.options.oceanLevel .. "\n"
-    message = message .. "Speed: " .. M.options.floodSpeed .. "\n"
-    message = message .. "Limit: " .. M.options.limit .. "\n"
-    message = message .. "Limit enabled: " .. tostring(M.options.limitEnabled) .. "\n"
-    message = message .. "Decrease: " .. tostring(M.options.decrease) .. "\n"
-    message = message .. "Enabled: " .. tostring(M.options.enabled) .. "\n"
-    MP.hSendChatMessage(pid, message)
+    MP.hSendChatMessage(pid, "Level: " .. M.options.oceanLevel)
+    MP.hSendChatMessage(pid, "Speed: " .. M.options.floodSpeed)
+    MP.hSendChatMessage(pid, "Limit: " .. M.options.limit)
+    MP.hSendChatMessage(pid, "Limit enabled: " .. tostring(M.options.limitEnabled))
+    MP.hSendChatMessage(pid, "Decrease: " .. tostring(M.options.decrease))
+    MP.hSendChatMessage(pid, "Flooding: " .. tostring(M.options.enabled))
 end
 
 M.commands["setDecrease"] = function(pid, enabled)
