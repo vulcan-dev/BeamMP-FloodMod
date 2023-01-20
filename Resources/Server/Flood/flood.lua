@@ -71,30 +71,33 @@ function T_Update()
         end
     end
 
-    -- Check if we can change the level
-    local canChange = true
-    if limitEnabled then
-        if decrease and level - changeAmount < limit then
-            canChange = false
-        elseif not decrease and level + changeAmount > limit then
-            canChange = false
-        end
+    -- Increase or decrease the level
+    if decrease then
+        level = level - changeAmount
+    else
+        level = level + changeAmount
     end
 
-    if canChange then
-        if decrease then
-            level = level - changeAmount
-        else
-            level = level + changeAmount
-        end
-    end
-
+    -- Reset at (0 = disabled)
     if M.options.resetAt > 0.0 and level >= M.options.resetAt then
         level = M.initialLevel
     elseif M.options.resetAt < 0.0 and level <= M.options.resetAt then
         level = M.initialLevel
     end
 
+    -- Limit the level
+    if limitEnabled then
+        if decrease then
+            if level < limit then
+                level = limit
+            end
+        else
+            if level > limit then
+                level = limit
+            end
+        end
+    end
+    
     M.options.oceanLevel = level
     setWaterLevel(level)
 end
@@ -211,7 +214,11 @@ M.commands["limit"] = function(pid, limit)
 end
 
 M.commands["limitEnabled"] = function(pid, enabled)
-    print("flood_setLimitEnabled: " .. enabled)
+    if not enabled then
+        MP.hSendChatMessage(pid, "Invalid value")
+        return
+    end
+
     if string.lower(enabled) == "true" or enabled == "1" then
         enabled = true
     elseif string.lower(enabled) == "false" or enabled == "0" then
@@ -264,6 +271,11 @@ M.commands["rainVolume"] = function(pid, volume)
 end
 
 M.commands["floodWithRain"] = function(pid, enabled)
+    if not enabled then
+        MP.hSendChatMessage(pid, "Invalid value")
+        return
+    end
+
     if string.lower(enabled) == "true" or enabled == "1" then
         enabled = true
     elseif string.lower(enabled) == "false" or enabled == "0" then
@@ -278,6 +290,11 @@ M.commands["floodWithRain"] = function(pid, enabled)
 end
 
 M.commands["decrease"] = function(pid, enabled)
+    if not enabled then
+        MP.hSendChatMessage(pid, "Invalid value")
+        return
+    end
+
     if string.lower(enabled) == "true" or enabled == "1" then
         enabled = true
     elseif string.lower(enabled) == "false" or enabled == "0" then
@@ -297,13 +314,9 @@ M.commands["decrease"] = function(pid, enabled)
 end
 
 M.commands["printSettings"] = function(pid)
-    MP.hSendChatMessage(pid, "Level: " .. M.options.oceanLevel)
-    MP.hSendChatMessage(pid, "Speed: " .. M.options.floodSpeed)
-    MP.hSendChatMessage(pid, "Limit: " .. M.options.limit)
-    MP.hSendChatMessage(pid, "Limit enabled: " .. tostring(M.options.limitEnabled))
-    MP.hSendChatMessage(pid, "Decrease: " .. tostring(M.options.decrease))
-    MP.hSendChatMessage(pid, "Reset at: " .. M.options.resetAt)
-    MP.hSendChatMessage(pid, "Flooding: " .. tostring(M.options.enabled))
+    for k, v in pairs(M.options) do
+        MP.hSendChatMessage(pid, k .. ": " .. tostring(v))
+    end
 end
 
 MP.RegisterEvent("onInit", "onInit")
