@@ -17,3 +17,6 @@ This is a resource for BeamMP that adds a flood to all sorts of maps (as long as
 - `/flood_setLimit <limit>` - Sets the flood height limit
 - `/flood_setLimitEnabled <enabled>` - Enables or disables the flood height limit
 - `/flood_printSettings` - Prints the current flood settings
+
+## Credits
+- [Dudekahedron](https://github.com/StanleyDudek) - Testing and providing a test server
