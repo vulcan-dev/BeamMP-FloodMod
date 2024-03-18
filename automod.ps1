@@ -59,7 +59,13 @@ function Invoke-SomeAction {
         Remove-Item $zip
     }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($ModPath, $zip)
+
+    # Create ZIP file and handle a common error
+    try {
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($ModPath, $zip)
+    } catch {
+        Write-Host "Failed creating zip: $($_)" -ForegroundColor Red
+    }
 
     # Delete the old folder in the BeamMP resource path
     $old = "$BeamMPResourcePath/$ModName.zip"

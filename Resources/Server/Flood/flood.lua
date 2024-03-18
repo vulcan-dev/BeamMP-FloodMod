@@ -1,6 +1,41 @@
+--------------------------------------------------------------------------------
+-- File: flood.lua
+--
+-- Author:  Daniel W (vulcan-dev)
+-- Created: 2024/03/18 21:59:23
+--------------------------------------------------------------------------------
+
 require("multiplayer")
 
+--[[
+    TODO: Have an option to stop when every car is under the water, from singleplayer version:
+    ```
+    if M.presetData.stopWhenSubmerged then
+        local veh = be:getPlayerVehicle(0)
+        if not veh then return end
+
+        local boundingBox = veh:getSpawnWorldOOBB()
+        local halfExtentsZ = boundingBox:getHalfExtents().z
+        local height = halfExtentsZ * 2
+        local pos = veh:getPosition()
+
+        if oceanHeight >= pos.z + height then
+            M.presetData.enabled = false
+        end
+    end
+    ```
+
+    So when a vehicle is spawned, it will tell the server the height of the vehicle (obviously we trust the client, why wouldn't we)
+]]
+
 local M = {}
+
+local UPDATE_TIME = 1000
+--[[
+    I recommend keeping it at 1000 for smoothness. With a low value like the old 25ms, it will appear jittery on the client because it's not predicting
+    the server's next water level 100% accurately, and so if you have a low value, it will sort of snap to keep in sync. High values like 1000 (1s) are good because it keeps
+    it all synced, but it keeps it nice and smooth on the clients, even at low framerates
+]]
 
 M.options = {
     oceanLevel = 0.0,
@@ -9,10 +44,7 @@ M.options = {
     limitEnabled = false,
     enabled = false,
     decrease = false,
-    resetAt = 0.0, -- Doesn't reset everything, just the ocean level. Will be used for automatic flooding
-    rainAmount = 0.0,
-    rainVolume = -1.0, -- -1.0 = automatic, 0.0 = off, 1.0 = max
-    floodWithRain = true
+    resetAt = 0.0 -- Doesn't reset everything, just the ocean level. Will be used for automatic flooding
 }
 
 M.isOceanValid = false
@@ -20,30 +52,6 @@ M.initialLevel = 0.0
 M.commands = {}
 
 local invalidCount = 0
-
-function onPlayerJoin(pid)
-    local success = MP.TriggerClientEvent(pid, "E_OnPlayerLoaded", "")
-    if not success then
-        print("Failed to send \"E_OnPlayerLoaded\" to " .. pid)
-    end
-
-    -- Sync rain & volume
-    if M.options.rainAmount > 0.0 then
-        MP.TriggerClientEvent(pid, "E_SetRainAmount", tostring(M.options.rainAmount))
-    end
-
-    if M.options.rainVolume == -1.0 or M.options.rainVolume > 0.0 then
-        MP.TriggerClientEvent(pid, "E_SetRainVolume", tostring(M.options.rainVolume))
-    end
-end
-
-function onInit()
-    MP.CancelEventTimer("ET_Update")
-
-    for pid, player in pairs(MP.GetPlayers()) do
-        onPlayerJoin(pid)
-    end
-end
 
 local function setWaterLevel(level)
     if not M.isOceanValid then
@@ -54,52 +62,94 @@ local function setWaterLevel(level)
     MP.TriggerClientEvent(-1, "E_SetWaterLevel", tostring(level))
 end
 
+local function setFloodSpeed(client, speed)
+    M.options.floodSpeed = speed
+    MP.TriggerClientEvent(client, "E_SetFloodSpeed", tostring(speed))
+end
+
+local function sendServerState(client, level)
+    MP.TriggerClientEvent(client, "E_SendServerState", tostring(level))
+end
+
+local function setEnabled(client, enabled)
+    M.options.enabled = enabled
+    MP.TriggerClientEvent(client, "E_SetEnabled", enabled and "1" or "0")
+end
+
+local function strToBool(str)
+    str = string.lower(str)
+    local boolVal
+
+    if str == "1" or str == "true" or str == "on" then
+        boolVal = true
+    elseif str == "0" or str == "false" or str == "off" then
+        boolVal = false
+    else
+        return nil
+    end
+
+    return boolVal
+end
+
+function onPlayerJoin(pid)
+    local success = MP.TriggerClientEvent(pid, "E_OnPlayerLoaded", "")
+    if not success then
+        print("Failed to send \"E_OnPlayerLoaded\" to " .. pid)
+    end
+
+    sendServerState(pid, M.options.oceanLevel)
+    setFloodSpeed(pid, M.options.floodSpeed)
+    setEnabled(pid, M.options.enabled)
+
+    MP.TriggerClientEvent(pid, "E_SetDecreasing", M.options.decrease and "1" or "0")
+    MP.TriggerClientEvent(pid, "E_SetLimit", M.options.limitEnabled and tostring(M.options.limit) or "_") -- We send "_" because `tonumber` will return nil, meaning there's no limit on the client.
+                                                                                                          -- I might send `limitEnabled`, I'm not sure yet since it's not really necessary.
+    MP.TriggerClientEvent(pid, "E_SetResetAt", tostring(M.options.resetAt))
+end
+
+function onInit()
+    MP.CancelEventTimer("ET_Update")
+
+    for pid, player in pairs(MP.GetPlayers()) do
+        onPlayerJoin(pid)
+    end
+end
+
 function T_Update()
     if not M.isOceanValid or not M.options.enabled then return end
 
     local level = M.options.oceanLevel
-    local changeAmount = M.options.floodSpeed
+    local changeAmount = UPDATE_TIME * M.options.floodSpeed
     local limit = M.options.limit
-    local limitEnabled = M.options.limitEnabled
     local decrease = M.options.decrease
-
-    -- If we have rain, add the rain amount to the change amount. The flood speed will now act as a multiplier.
-    if M.floodWithRain then
-        local rainAmount = M.options.rainAmount
-        if rainAmount > 0.0 then
-            changeAmount = changeAmount + rainAmount * 0.0001
-        end
-    end
+    local resetAt = M.options.resetAt
 
     -- Increase or decrease the level
-    if decrease then
-        level = level - changeAmount
-    else
-        level = level + changeAmount
-    end
+    level = level + (decrease and -changeAmount or changeAmount)
 
     -- Reset at (0 = disabled)
-    if M.options.resetAt > 0.0 and level >= M.options.resetAt then
-        level = M.initialLevel
-    elseif M.options.resetAt < 0.0 and level <= M.options.resetAt then
+    if resetAt ~= 0 and ((decrease and level <= resetAt) or (not decrease and level >= resetAt)) then
         level = M.initialLevel
     end
 
+    local limitReached = false
+
     -- Limit the level
-    if limitEnabled then
-        if decrease then
-            if level < limit then
-                level = limit
-            end
-        else
-            if level > limit then
-                level = limit
-            end
-        end
+    if M.options.limitEnabled and ((decrease and level <= limit) or (not decrease and level >= limit)) then
+        level = limit
+        limitReached = true
     end
     
     M.options.oceanLevel = level
-    setWaterLevel(level)
+
+    sendServerState(-1, level)
+    if limitReached then
+        setEnabled(-1, false)
+        MP.CancelEventTimer("ET_Update")
+    end
+
+    -- print("Server Level: " .. tonumber(level))
+    -- setWaterLevel(level)
 end
 
 function E_OnInitialize(pid, waterLevel)
@@ -120,6 +170,8 @@ function E_OnInitialize(pid, waterLevel)
     if M.initialLevel == 0.0 then
         print("Setting initial water level to " .. waterLevel)
         M.initialLevel = waterLevel -- We sadly have to rely on the client 😅🔫
+
+        sendServerState(-1, waterLevel) -- If we don't do this, the first client will see the water jump from 0 to the initialLevel.
     end
 end
 
@@ -133,14 +185,13 @@ M.commands["start"] = function(pid)
         MP.hSendChatMessage(pid, "Flood has already started")
         return
     end
-    
-    M.options.enabled = true
+
+    setEnabled(-1, true)
     if M.options.oceanLevel == 0.0 then
         M.options.oceanLevel = M.initialLevel
     end
     
-    MP.CreateEventTimer("ET_Update", 25)
-
+    MP.CreateEventTimer("ET_Update", UPDATE_TIME)
     MP.hSendChatMessage(-1, "A flood has started!")
 end
 
@@ -151,7 +202,8 @@ M.commands["stop"] = function(pid)
     end
 
     MP.CancelEventTimer("ET_Update")
-    M.options.enabled = false
+    setEnabled(-1, false)
+
     MP.hSendChatMessage(-1, "The flood has stopped!")
 end
 
@@ -162,7 +214,8 @@ M.commands["reset"] = function(pid)
     end
 
     MP.CancelEventTimer("ET_Update")
-    M.options.enabled = false
+    setEnabled(-1, false)
+    sendServerState(-1, M.initialLevel)
     M.options.oceanLevel = M.initialLevel
     setWaterLevel(M.initialLevel)
 end
@@ -180,6 +233,7 @@ M.commands["level"] = function(pid, level)
     end
 
     M.options.oceanLevel = level
+    sendServerState(-1, level)
     setWaterLevel(level)
     MP.hSendChatMessage(pid, "Set water level to " .. level)
 end
@@ -192,101 +246,40 @@ M.commands["speed"] = function(pid, speed)
     end
 
     if speed < 0.0 then
-        MP.hSendChatMessage(pid, "Speed can't be negative, setting to 0.0")
-        speed = 0.0
+        MP.hSendChatMessage(pid, "Speed can't be negative, setting to 0")
+        speed = 0
     end
 
-    -- Do I limit the max? Hmmm, not sure 🤔
-
-    M.options.floodSpeed = speed
+    setFloodSpeed(-1, speed)
     MP.hSendChatMessage(pid, "Set flood speed to " .. speed)
 end
 
 M.commands["limit"] = function(pid, limit)
     limit = tonumber(limit) or nil
-    if not limit then
-        MP.hSendChatMessage(pid, "Invalid limit")
-        return
+    if limit then
+        M.options.limit = limit
+        MP.hSendChatMessage(pid, "Set flood limit to " .. limit)
     end
 
-    M.options.limit = limit
-    MP.hSendChatMessage(pid, "Set flood limit to " .. limit)
-end
-
-M.commands["limitEnabled"] = function(pid, enabled)
-    if not enabled then
-        MP.hSendChatMessage(pid, "Invalid value")
-        return
+    M.options.limitEnabled = limit ~= nil
+    if not M.options.limitEnabled then
+        MP.hSendChatMessage(pid, "Disabled flood limit")
     end
 
-    if string.lower(enabled) == "true" or enabled == "1" then
-        enabled = true
-    elseif string.lower(enabled) == "false" or enabled == "0" then
-        enabled = false
-    else
-        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
-        return
-    end
-
-    M.options.limitEnabled = enabled
-    MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " flood limit")
+    MP.TriggerClientEvent(-1, "E_SetLimit", tostring(limit))
 end
 
 M.commands["resetAt"] = function(pid, level)
-    level = tonumber(level) or nil
-    if not level then
-        MP.hSendChatMessage(pid, "Invalid level")
-        return
-    end
-
+    level = tonumber(level) or 0
     M.options.resetAt = level
-    MP.hSendChatMessage(pid, "Set reset level to " .. level)
-end
-
-M.commands["rainAmount"] = function(pid, amount)
-    amount = tonumber(amount) or nil
-    if not amount then
-        MP.hSendChatMessage(pid, "Invalid amount")
-        return
-    end
-
-    M.options.rainAmount = amount
-    MP.hSendChatMessage(pid, "Set rain amount to " .. amount)
-    MP.TriggerClientEvent(-1, "E_SetRainAmount", tostring(amount))
-    if M.options.rainVolume == -1 then -- Update the volume if it's set to auto
-        MP.TriggerClientEvent(-1, "E_SetRainVolume", tostring(M.options.rainVolume))
-    end
-end
-
-M.commands["rainVolume"] = function(pid, volume)
-    volume = tonumber(volume) or nil
-    if not volume then
-        MP.hSendChatMessage(pid, "Invalid volume")
-        return
-    end
-
-    M.options.rainVolume = volume
-    MP.hSendChatMessage(pid, "Set rain volume to " .. volume)
-    MP.TriggerClientEvent(-1, "E_SetRainVolume", tostring(volume))
-end
-
-M.commands["floodWithRain"] = function(pid, enabled)
-    if not enabled then
-        MP.hSendChatMessage(pid, "Invalid value")
-        return
-    end
-
-    if string.lower(enabled) == "true" or enabled == "1" then
-        enabled = true
-    elseif string.lower(enabled) == "false" or enabled == "0" then
-        enabled = false
+    if level ~= 0 then
+        MP.hSendChatMessage(pid, "Set reset level to " .. level)
     else
-        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
-        return
+        MP.hSendChatMessage(pid, "Disabled reset at")
+        level = 0
     end
 
-    M.options.floodWithRain = enabled
-    MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " flooding with rain")
+    MP.TriggerClientEvent(-1, "E_SetResetAt", tostring(level))
 end
 
 M.commands["decrease"] = function(pid, enabled)
@@ -295,21 +288,16 @@ M.commands["decrease"] = function(pid, enabled)
         return
     end
 
-    if string.lower(enabled) == "true" or enabled == "1" then
-        enabled = true
-    elseif string.lower(enabled) == "false" or enabled == "0" then
-        enabled = false
-    else
-        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
+    local boolVal = strToBool(enabled)
+    if boolVal == nil then
+        MP.hSendChatMessage(pid, "Please use one of the following: (on, true, 1) or (off, false, 0)")
         return
     end
 
-    if M.options.floodWithRain and M.options.rainAmount > 0.0 and enabled then
-        MP.hSendChatMessage(pid, "What? You can't flood with rain and decrease at the same time!. Well, you can but I won't let you")
-        return
-    end
+    enabled = boolVal
 
     M.options.decrease = enabled
+    MP.TriggerClientEvent(-1, "E_SetDecreasing", enabled and "1" or "0")
     MP.hSendChatMessage(pid, "Set flood decrease to " .. tostring(enabled))
 end
 
@@ -321,8 +309,7 @@ end
 
 MP.RegisterEvent("onInit", "onInit")
 MP.RegisterEvent("onPlayerJoin", "onPlayerJoin")
-MP.RegisterEvent("E_OnInitiliaze", "E_OnInitialize")
+MP.RegisterEvent("E_OnInitialize", "E_OnInitialize")
 MP.RegisterEvent("ET_Update", "T_Update")
-MP.CreateEventTimer("ET_Update", 25)
 
 return M

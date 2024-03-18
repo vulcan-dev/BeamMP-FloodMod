@@ -1,2 +1,8 @@
-load("floodBeamMP")
-registerCoreModule("floodBeamMP")
+--------------------------------------------------------------------------------
+-- File: modScript.lua
+--
+-- Author:  Daniel W (vulcan-dev)
+-- Created: 2024/03/18 22:00:57
+--------------------------------------------------------------------------------
+
+setExtensionUnloadMode("floodBeamMP", "manual")
