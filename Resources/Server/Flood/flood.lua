@@ -119,7 +119,7 @@ function T_Update()
     if not M.isOceanValid or not M.options.enabled then return end
 
     local level = M.options.oceanLevel
-    local changeAmount = UPDATE_TIME * M.options.floodSpeed
+    local changeAmount = M.options.floodSpeed
     local limit = M.options.limit
     local decrease = M.options.decrease
     local resetAt = M.options.resetAt

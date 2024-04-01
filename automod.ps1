@@ -33,7 +33,7 @@ if (!(Test-Path $BeamMPResourcePath)) {
 
 # Watcher stuff
 $Watcher = New-Object System.IO.FileSystemWatcher
-$Watcher.Path = $ModPath
+$Watcher.Path = Resolve-Path -Path $ModPath
 $Watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWrite, [System.IO.NotifyFilters]::FileName, [System.IO.NotifyFilters]::DirectoryName
 $Watcher.Filter = "*.*"
 $Watcher.IncludeSubdirectories = $true

@@ -109,7 +109,7 @@ local function onUpdate(dt)
     end
 
     setWaterLevel(newLevel)
-    serverWaterLevel = serverWaterLevel + ((decreasing and -1 or 1) * floodSpeed * 1000) * dt
+    serverWaterLevel = serverWaterLevel + ((decreasing and -1 or 1) * floodSpeed) * dt
 end
 
 local function onClientEndMission()
